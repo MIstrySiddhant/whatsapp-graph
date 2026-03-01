@@ -4,6 +4,13 @@ import plotly.express as px
 
 import core
 
+def section_header(title: str, info: str):
+    left, right = st.columns([0.82, 0.18])
+    with left:
+        st.subheader(title)
+    with right:
+        with st.expander("ℹ️ Info", expanded=False):
+            st.write(info)
 
 st.set_page_config(page_title="WhatsApp Analytics", layout="wide")
 st.title("WhatsApp Analytics Dashboard")
@@ -65,7 +72,11 @@ if df.empty:
     st.stop()
 
 # ---------- Monthly graph ----------
-st.subheader("Monthly Message Count (Month-Year)")
+# st.subheader("Monthly Message Count (Month-Year)")
+section_header(
+    "Monthly Message Count (Month-Year)",
+    "Shows how many messages were sent each month. X-axis is month-year, Y-axis is message count. Each line represents a person."
+)
 monthly = core.monthly_counts(df)
 
 fig_month = px.line(
@@ -82,13 +93,21 @@ with st.expander("Monthly counts table"):
     st.dataframe(table, use_container_width=True)
 
 # ---------- Daily view ----------
-st.subheader("Daily Message Count")
+# st.subheader("Daily Message Count")
+section_header(
+    "Daily Message Count",
+    "Displays messages per day. Useful to spot very active days, silent days, or sudden spikes in conversation."
+)
 daily = core.daily_counts(df)
 fig_day = px.line(daily, x="date", y="message_count", color="sender", labels={"date": "Date", "message_count": "Messages"})
 st.plotly_chart(fig_day, use_container_width=True)
 
 # ---------- Summary ----------
-st.subheader("Summary")
+# st.subheader("Summary")
+section_header(
+    "Daily Message Count",
+    "Displays messages per day. Useful to spot very active days, silent days, or sudden spikes in conversation."
+)
 c1, c2, c3 = st.columns(3)
 with c1:
     st.write("**Total Messages**")
@@ -101,21 +120,34 @@ with c3:
     st.dataframe(core.avg_words_per_message(df), use_container_width=True)
 
 # ---------- Talk percentage ----------
-st.subheader("Talk Percentage (%)")
+# st.subheader("Talk Percentage (%)")
+section_header(
+    "Talk Percentage (%)",
+    "Shows who talks more overall. 50%-50% means balanced; higher % means that person sent more messages."
+)
 pct = core.talk_percentage(df)
 st.plotly_chart(px.pie(pct, names="sender", values="percentage"), use_container_width=True)
 st.dataframe(pct, use_container_width=True)
 
 # ---------- Weekday bar chart ----------
-st.subheader("Most Active Day of Week")
+# st.subheader("Most Active Day of Week")
+section_header(
+    "Most Active Day of Week",
+    "Shows which weekday (Mon–Sun) has the most messages. Good to understand weekly patterns."
+)
 weekday_df = core.weekday_counts(df)
-weekday_order = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+weekday_order = ["Monday", "Tuesday", "We"
+"dnesday", "Thursday", "Friday", "Saturday", "Sunday"]
 weekday_df["weekday"] = pd.Categorical(weekday_df["weekday"], categories=weekday_order, ordered=True)
 weekday_df = weekday_df.sort_values("weekday")
 st.plotly_chart(px.bar(weekday_df, x="weekday", y="message_count", color="sender", barmode="group"), use_container_width=True)
 
 # ---------- Reply time + fastest reply ----------
-st.subheader("Reply Time Insights")
+# st.subheader("Reply Time Insights")
+section_header(
+    "Most Active Day of Week",
+    "Shows which weekday (Mon–Sun) has the most messages. Good to understand weekly patterns."
+)
 reply_avg = core.reply_time_avg_minutes(df)
 if reply_avg.empty:
     st.write("Not enough back-and-forth messages to calculate reply times.")
@@ -128,7 +160,11 @@ fastest = core.fastest_reply(df)
 st.json(fastest if fastest else {"note": "Not enough back-and-forth to calculate."})
 
 # ---------- Streak + silence ----------
-st.subheader("Streak & Silence")
+# st.subheader("Streak & Silence")
+section_header(
+    "Streak & Silence",
+    "Longest Active Streak = maximum continuous days with at least 1 message. Longest Silent Period = biggest time gap between two consecutive messages."
+)
 st.write(f"**Longest Active Streak:** {core.longest_active_streak_days(df)} days")
 
 st.write("**Longest Silent Period**")
@@ -136,29 +172,49 @@ silence = core.longest_silence(df)
 st.json(silence if silence else {"note": "Not enough messages to calculate."})
 
 # ---------- Seen / ignored ----------
-st.subheader("Who Leaves Who on 'Seen' More (Approximation)")
+# st.subheader("Who Leaves Who on 'Seen' More (Approximation)")
+section_header(
+    "Who Leaves Who on 'Seen' More (Approximation)",
+    "WhatsApp export doesn’t include real 'seen'. This is an approximation: if Person A sends a message and Person B doesn’t reply within the chosen threshold, it counts as 'ignored/seen'."
+)
 threshold = st.slider("Reply threshold (minutes)", min_value=10, max_value=720, value=120, step=10)
 st.dataframe(core.seen_ignored_counts(df, threshold_minutes=threshold), use_container_width=True)
 
 # ---------- Heatmap ----------
-st.subheader("Activity Heatmap (Hour vs Day)")
+# st.subheader("Activity Heatmap (Hour vs Day)")
+section_header(
+    "Activity Heatmap (Hour vs Day)",
+    "Heatmap shows when the chat is most active. Rows = weekday, columns = hour (0–23). Brighter cells mean more messages at that time."
+)
 heat = core.activity_heatmap_table(df)
 heat_pivot = heat.pivot_table(index="weekday", columns="hour", values="count", fill_value=0)
 st.plotly_chart(px.imshow(heat_pivot, aspect="auto", labels=dict(x="Hour", y="Day", color="Messages")), use_container_width=True)
 
 # ---------- Monthly growth ----------
-st.subheader("Monthly Growth Rate (Overall)")
+# st.subheader("Monthly Growth Rate (Overall)")
+section_header(
+    "Monthly Growth Rate (Overall)",
+    "Shows whether total monthly messages increased or decreased compared to the previous month. Positive % means growth, negative % means decline."
+)
 growth = core.monthly_growth_rate(df)
 growth["month_label"] = growth["month_start"].dt.strftime("%m-%y")
 st.plotly_chart(px.bar(growth, x="month_label", y="growth_rate_%", labels={"month_label": "Month", "growth_rate_%": "Growth %"}), use_container_width=True)
 st.dataframe(growth, use_container_width=True)
 
 # ---------- Love Index ----------
-st.subheader("Love Index 💖")
+# st.subheader("Love Index 💖")
+section_header(
+    "Love Index 💖",
+    "Counts how often 'love words/emojis' appear (like love, miss you, ❤️, 😘). It’s a fun indicator, not a perfect emotion detector."
+)
 st.dataframe(core.love_index(df), use_container_width=True)
 
 # ---------- Emoji analysis ----------
-st.subheader("Top Emojis per Person")
+# st.subheader("Top Emojis per Person")
+section_header(
+    "Top Emojis per Person",
+    "Shows the most used emojis by each person. Useful to compare emoji style and expression."
+)
 emoji_data = core.emoji_top(df, top_n=15)
 for sender, counts in emoji_data.items():
     st.write(f"**{sender}**")
@@ -169,6 +225,10 @@ for sender, counts in emoji_data.items():
         st.dataframe(emoji_df, use_container_width=True)
 
 # Debug
+section_header(
+    "Debug: Parsed preview",
+    "Shows a sample of parsed messages (datetime, sender, message). Use this to verify parsing is correct if counts look wrong."
+)
 with st.expander("Debug: Parsed preview"):
     st.write("Rows:", len(df))
     st.dataframe(df[["datetime", "sender", "message"]].sort_values("datetime").head(50), use_container_width=True)
