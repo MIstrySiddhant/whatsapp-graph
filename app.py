@@ -2,6 +2,7 @@ import re
 import pandas as pd
 import streamlit as st
 import plotly.express as px
+import analytics
 
 
 def normalize_line(s: str) -> str:
@@ -251,3 +252,37 @@ st.dataframe(word_counts, use_container_width=True)
 with st.expander("Debug: Show parsed sample (to verify correct parsing)"):
     st.write("Parsed messages:", len(df))
     st.dataframe(df[["datetime", "sender", "message"]].sort_values("datetime").head(30), use_container_width=True)
+
+    st.subheader("Daily Message Count")
+daily_df = analytics.daily_message_count(df)
+st.dataframe(daily_df, use_container_width=True)
+
+st.subheader("Talk Percentage (%)")
+percentage_df = analytics.talk_percentage(df)
+st.dataframe(percentage_df, use_container_width=True)
+
+st.subheader("Average Words Per Message")
+avg_words_df = analytics.average_words_per_message(df)
+st.dataframe(avg_words_df, use_container_width=True)
+
+st.subheader("Average Words Per Message")
+avg_words_df = analytics.average_words_per_message(df)
+st.dataframe(avg_words_df, use_container_width=True)
+
+st.subheader("Most Active Day of Week")
+weekday_df = analytics.most_active_day(df)
+st.dataframe(weekday_df, use_container_width=True)
+
+st.subheader("Average Reply Time (minutes)")
+reply_df = analytics.reply_time_analysis(df)
+st.dataframe(reply_df, use_container_width=True)
+
+st.subheader("Longest Conversation Streak (Days)")
+st.write("Longest continuous active days:", analytics.conversation_streaks(df))
+
+st.subheader("Emoji Usage Per Person")
+emoji_data = analytics.emoji_analysis(df)
+
+for sender, emojis in emoji_data.items():
+    st.write(f"**{sender}**")
+    st.write(emojis)
