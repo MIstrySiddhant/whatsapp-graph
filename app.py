@@ -5,37 +5,47 @@ import plotly.express as px
 
 
 def normalize_line(s: str) -> str:
+    """
+    WhatsApp exports sometimes contain invisible direction marks (common on iPhone),
+    and weird spaces. These break regex matching, so we remove/normalize them.
+    """
     return (
-        s.replace("\u202f", " ")
-         .replace("\u00a0", " ")
-         .replace("\ufeff", "")
+        s.replace("\ufeff", "")   # BOM
+         .replace("\u200e", "")   # LRM (often shown as "‎")
+         .replace("\u200f", "")   # RLM
+         .replace("\u061c", "")   # Arabic letter mark
+         .replace("\u202f", " ")  # narrow no-break space
+         .replace("\u00a0", " ")  # no-break space
          .strip()
     )
 
 
 def parse_whatsapp_text(text: str) -> pd.DataFrame:
-    lines = [normalize_line(x) for x in text.splitlines()]
+    lines = [normalize_line(x) for x in text.splitlines() if normalize_line(x)]
 
-    # Pattern A: [02/02/24, 9:29:43 PM] Name: Message
+    # Pattern A: iPhone / bracket style
+    # [02/02/24, 9:29:43 PM] Name: Message
+    # [02/02/24, 9:29 PM] Name: Message
     bracket_pattern = re.compile(
         r"""^\[
-        (?P<date>\d{1,2}[\/\.\-]\d{1,2}[\/\.\-]\d{2,4}),
-        \s*
-        (?P<time>\d{1,2}:\d{2}(?::\d{2})?)
-        \s*(?P<ampm>[APap][Mm])?
+        (?P<date>\d{1,2}[\/\.\-]\d{1,2}[\/\.\-]\d{2,4}),\s*
+        (?P<time>\d{1,2}:\d{2}(?::\d{2})?)\s*
+        (?P<ampm>[APap][Mm])?
         \]\s*
         (?P<rest>.*)
         $""",
         re.VERBOSE,
     )
 
-    # Pattern B: 13/10/23, 2:08 pm - Name: Message
+    # Pattern B: Android / dash style
+    # 13/10/23, 2:08 pm - Name: Message
+    # 13/10/23, 14:08 - Name: Message
     dash_pattern = re.compile(
         r"""^
         (?P<date>\d{1,2}[\/\.\-]\d{1,2}[\/\.\-]\d{2,4})
         [,\s]+
-        (?P<time>\d{1,2}:\d{2}(?::\d{2})?)
-        \s*(?P<ampm>[APap][Mm])?
+        (?P<time>\d{1,2}:\d{2}(?::\d{2})?)\s*
+        (?P<ampm>[APap][Mm])?
         \s*-\s*
         (?P<rest>.*)
         $""",
@@ -67,8 +77,14 @@ def parse_whatsapp_text(text: str) -> pd.DataFrame:
                 records.append(current)
 
             m = m1 if m1 else m2
-            current = start_new_message(m.group("date"), m.group("time"), m.group("ampm"), m.group("rest"))
+            current = start_new_message(
+                m.group("date"),
+                m.group("time"),
+                m.group("ampm"),
+                m.group("rest"),
+            )
         else:
+            # multi-line continuation
             if current is not None:
                 current["message"] += "\n" + line
 
@@ -79,22 +95,25 @@ def parse_whatsapp_text(text: str) -> pd.DataFrame:
     if df.empty:
         return df
 
+    # Build datetime strings
     dt_str = df["raw_date"].astype(str) + " " + df["raw_time"].astype(str)
     if df["ampm"].notna().any():
         dt_str = dt_str + " " + df["ampm"].fillna("")
 
-    # dayfirst vs monthfirst auto-detect
+    # Auto-detect day-first vs month-first
     dt_dayfirst = pd.to_datetime(dt_str, errors="coerce", dayfirst=True)
     dt_monthfirst = pd.to_datetime(dt_str, errors="coerce", dayfirst=False)
     df["datetime"] = dt_dayfirst if dt_dayfirst.notna().sum() >= dt_monthfirst.notna().sum() else dt_monthfirst
 
     df = df.dropna(subset=["datetime"]).copy()
-    df = df[df["sender"].notna()].copy()  # remove system lines
+
+    # Keep rows that look like user messages (sender exists)
+    df = df[df["sender"].notna()].copy()
 
     return df
 
 
-# -------- Streamlit UI --------
+# ---------------- Streamlit UI ----------------
 st.set_page_config(page_title="WhatsApp Monthly Graph", layout="wide")
 st.title("WhatsApp Message Graph (Month-Year)")
 
@@ -107,11 +126,14 @@ if uploaded is None:
 
 raw = uploaded.getvalue()
 
-# Try decoding
+# Decode
 try:
-    text = raw.decode("utf-8")
+    text = raw.decode("utf-8-sig")
 except UnicodeDecodeError:
-    text = raw.decode("utf-16")
+    try:
+        text = raw.decode("utf-8")
+    except UnicodeDecodeError:
+        text = raw.decode("utf-16")
 
 df = parse_whatsapp_text(text)
 
@@ -121,9 +143,36 @@ if df.empty:
 
 st.sidebar.header("Filters")
 
-hide_media = st.sidebar.checkbox("Hide '<Media omitted>' / stickers", value=True)
+hide_media = st.sidebar.checkbox("Hide media/stickers omitted", value=True)
 if hide_media:
-    df = df[~df["message"].str.strip().isin(["<Media omitted>", "sticker omitted", "‎sticker omitted"])]
+    df = df[~df["message"].str.strip().isin([
+        "<Media omitted>",
+        "sticker omitted",
+        "‎sticker omitted",
+        "image omitted",
+        "video omitted"
+    ])]
+
+hide_system = st.sidebar.checkbox("Hide WhatsApp system notices (encrypted, security code, etc.)", value=True)
+if hide_system:
+    system_keywords = [
+        "end-to-end encrypted",
+        "Messages and calls are end-to-end encrypted",
+        "changed this group's icon",
+        "changed the group description",
+        "changed the subject",
+        "added",
+        "removed",
+        "left",
+        "joined using this group's invite link",
+        "changed their phone number",
+        "security code changed",
+    ]
+    # filter messages that contain these phrases (case-insensitive)
+    mask = df["message"].str.lower()
+    for kw in system_keywords:
+        mask = mask & (~df["message"].str.lower().str.contains(kw.lower(), na=False))
+    df = df[mask]
 
 senders = sorted(df["sender"].unique().tolist())
 selected_senders = st.sidebar.multiselect("Choose people", senders, default=senders)
@@ -155,7 +204,7 @@ fig = px.line(
 )
 
 fig.update_traces(line_shape="spline")
-fig.update_xaxes(dtick="M1", tickformat="%m-%y")
+fig.update_xaxes(dtick="M1", tickformat="%m-%y")  # ✅ 1 month gap only
 
 st.plotly_chart(fig, use_container_width=True)
 
@@ -170,3 +219,8 @@ st.subheader("Total message count per person")
 total_counts = df.groupby("sender").size().reset_index(name="total_messages")
 total_counts = total_counts.sort_values("total_messages", ascending=False)
 st.dataframe(total_counts, use_container_width=True)
+
+# Debug section (helps verify parsing)
+with st.expander("Debug: Show parsed sample (to verify correct parsing)"):
+    st.write("Parsed messages:", len(df))
+    st.dataframe(df[["datetime", "sender", "message"]].sort_values("datetime").head(30), use_container_width=True)
