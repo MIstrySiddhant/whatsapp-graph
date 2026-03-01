@@ -153,11 +153,15 @@ if hide_media:
         "video omitted"
     ])]
 
-hide_system = st.sidebar.checkbox("Hide WhatsApp system notices (encrypted, security code, etc.)", value=True)
+hide_system = st.sidebar.checkbox(
+    "Hide WhatsApp system notices (encrypted, security code, etc.)",
+    value=True
+)
+
 if hide_system:
     system_keywords = [
         "end-to-end encrypted",
-        "Messages and calls are end-to-end encrypted",
+        "security code changed",
         "changed this group's icon",
         "changed the group description",
         "changed the subject",
@@ -166,12 +170,14 @@ if hide_system:
         "left",
         "joined using this group's invite link",
         "changed their phone number",
-        "security code changed",
     ]
-    # filter messages that contain these phrases (case-insensitive)
-    mask = df["message"].str.lower()
+
+    # Create a boolean mask that keeps only real messages
+    mask = pd.Series(True, index=df.index)
+
     for kw in system_keywords:
-        mask = mask & (~df["message"].str.lower().str.contains(kw.lower(), na=False))
+        mask &= ~df["message"].str.lower().str.contains(kw.lower(), na=False)
+
     df = df[mask]
 
 senders = sorted(df["sender"].unique().tolist())
