@@ -226,6 +226,27 @@ total_counts = df.groupby("sender").size().reset_index(name="total_messages")
 total_counts = total_counts.sort_values("total_messages", ascending=False)
 st.dataframe(total_counts, use_container_width=True)
 
+# ---------------- Word Count Per Person ----------------
+
+st.subheader("Total word count per person")
+
+# Remove extra spaces
+df["clean_message"] = df["message"].str.strip()
+
+# Count words per message
+df["word_count"] = df["clean_message"].apply(
+    lambda x: len(x.split()) if isinstance(x, str) else 0
+)
+
+# Group by sender
+word_counts = (
+    df.groupby("sender")["word_count"]
+      .sum()
+      .reset_index()
+      .sort_values("word_count", ascending=False)
+)
+
+st.dataframe(word_counts, use_container_width=True)
 # Debug section (helps verify parsing)
 with st.expander("Debug: Show parsed sample (to verify correct parsing)"):
     st.write("Parsed messages:", len(df))
